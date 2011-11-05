@@ -153,6 +153,10 @@ void main(void) {
 						}
 					}
 			}
+		} else {
+			if (TXIF) { //send 'n' as a filler
+				TXREG = 'n';
+			}
 		}
 
     }
