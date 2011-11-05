@@ -164,7 +164,7 @@ void main(void) {
             TX_Buf[14] = 13;
             TX_Buf[15] = 10;
 
-            write_int(0xffff, 6, 5);
+            write_int(sen_medm, 6, 5);
 
         }
     }
