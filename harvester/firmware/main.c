@@ -38,10 +38,11 @@ config at 0x2007 __CONFIG = _CP_OFF &
         _endasm
 
 
-//will not be part of lcd library:
-unsigned char Lcd_Ready;
+unsigned char Converting, Sending;
 
-unsigned char TX_Buf[16];
+unsigned char tx_buffer[6];
+unsigned char tx_buffer_copy[6];
+
 
 void write_int(unsigned int, unsigned char, unsigned char);
 
@@ -51,11 +52,13 @@ void intHand(void) __interrupt 0
     static unsigned char led_count;
 
     if (TMR0IE && TMR0IF) {
-        Lcd_Ready = 1;
-        if (led_count > 49) {
+		if (Converting == 0) {
+	        Sending = 1;
+    	    Converting = 1;
+		}
+        if (led_count >= 30) { // 32ms * 30 ~ 1s
             LED_PIN = !LED_PIN;
             led_count = 0;
-//            TXREG = 82;
         } else {
             led_count++;
         }
@@ -82,7 +85,7 @@ void setup(void) {
     GIE = 1; //Enable interrupts
 
     //Initialize Timer0 - used for LCD refresh rate and long-term timebase
-    OPTION_REG = 4; // 1:32 prescaler, giving XLCD 4.1ms for Cmd cycles
+    OPTION_REG = 0b111; // 1:256 prescaler -> 32.8 ms
     TMR0IE = 1;
     TMR0 = 0;
     
@@ -94,16 +97,11 @@ void setup(void) {
     
 }
 
-
 void main(void) {
     unsigned char i, j;//, temp;
-    unsigned int sen_long, sen_medm, sen_shrt;
+    char send_state, send_index;
+    
     setup();
-
-    //clear TX Buff
-    for (j = 0; j < 16; j++) {
-        TX_Buf[j] = ' ';
-    }
 
     //turn on
     i2c_start();
@@ -124,49 +122,39 @@ void main(void) {
     i2c_tx(0x07|0b10100000);
     i2c_tx(0b00100000);
     i2c_stop();
-
             
+    tx_buffer[0] = 'n';
+    tx_buffer[1] = 'y';
+    tx_buffer[2] = 123;
+    tx_buffer[3] = 64;
+    tx_buffer[4] = 231;
+    tx_buffer[5] = 1022;
+    
+    send_state = 0;
+    
     while (1) {
-        if (TXIF) // ready for new word
-        {
-            j++;
-            if (j > 15)
-                j = 0;
-            TXREG = TX_Buf[j];
-        }
+    	Converting = 0;
+		if (Sending == 1) { // sending in progress
+			switch (send_state) {
+				case 0: //start
+					//copy buffer
+					for (send_index = 0; send_index < 6; send_index++) {
+						tx_buffer_copy[send_index] = tx_buffer[send_index];
+					}
+					send_index = 0;
+					send_state = 1;
+				case 1: //send buffer, 1 byte at a time
+					if (TXIF) { //ready for next byte
+						TXREG = tx_buffer_copy[send_index];
+						send_index++;
+						if (send_index >= 6) { // we are done
+							send_state = 0;
+							Sending = 0;
+						}
+					}
+			}
+		}
 
-        if (Lcd_Ready) {
-            Lcd_Ready = 0;
-            
-            i2c_start();
-            i = i2c_tx(0b01110010);
-            i2c_tx(0x10|0b10100000);
-            i2c_start();
-            i2c_tx(0b01110011);
-            
-            sen_medm = i2c_rx(1);
-            sen_medm += 256 * i2c_rx(1);
-            sen_long = i2c_rx(1);
-            sen_long += 256 * i2c_rx(1);
-            sen_shrt = i2c_rx(1);
-            sen_shrt += 256 * i2c_rx(0);
-            i2c_stop();
-            
-/*
-            lcd_write_int(i, 1, 0, 1);
-            lcd_write_int(sen_long, 0, 0, 5);
-            lcd_write_int(sen_medm, 0, 6, 5);
-            lcd_write_int(sen_shrt, 1, 2, 5);*/
-            TX_Buf[0] = 'n';
-            TX_Buf[1] = 'y';
-            TX_Buf[2] = 17;
-            TX_Buf[3] = 15;
-            TX_Buf[4] = 13;
-            TX_Buf[5] = 10;
-
-            //write_int(sen_medm, 6, 5);
-
-        }
     }
 }
 
@@ -187,30 +175,30 @@ void write_int(unsigned int num, unsigned char col, unsigned char num_digits)
     digit = num / 10000;
     s = digit * 10000;
     num = num - s;
-    TX_Buf[col] = '0' + digit;
+    tx_buffer[col] = '0' + digit;
     col++;
     
 four_digits:
     digit = num / 1000;
     s = digit * 1000;
     num = num - s;
-    TX_Buf[col] = '0' + digit;
+    tx_buffer[col] = '0' + digit;
     col++;
 
 three_digits:
     digit = num / 100;
     s = 100 * digit;
     num = num - s;
-    TX_Buf[col] = '0' + digit;
+    tx_buffer[col] = '0' + digit;
     col++;
 
 two_digits:
     digit = num / 10;
     s = digit * 10;
     num = num - s;
-    TX_Buf[col] = '0' + digit;
+    tx_buffer[col] = '0' + digit;
     col++;
 
 one_digit:
-    TX_Buf[col] = '0' + num;
+    tx_buffer[col] = '0' + num;
 }
