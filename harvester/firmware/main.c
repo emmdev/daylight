@@ -9,7 +9,7 @@
     led blinking
     serial port sending 'y' repeatedly
     serial port sending "hello"
-2011-11-5
+2011-11-05
     serial port sending 16-bit integers
     
 */
@@ -55,6 +55,7 @@ void intHand(void) __interrupt 0
         if (led_count > 49) {
             LED_PIN = !LED_PIN;
             led_count = 0;
+//            TXREG = 82;
         } else {
             led_count++;
         }
@@ -156,15 +157,14 @@ void main(void) {
             lcd_write_int(sen_long, 0, 0, 5);
             lcd_write_int(sen_medm, 0, 6, 5);
             lcd_write_int(sen_shrt, 1, 2, 5);*/
-            TX_Buf[0] = 'h';
-            TX_Buf[1] = 'e';
-            TX_Buf[2] = 'l';
-            TX_Buf[3] = 'l';
-            TX_Buf[4] = 'o';
-            TX_Buf[14] = 13;
-            TX_Buf[15] = 10;
+            TX_Buf[0] = 'n';
+            TX_Buf[1] = 'y';
+            TX_Buf[2] = 17;
+            TX_Buf[3] = 15;
+            TX_Buf[4] = 13;
+            TX_Buf[5] = 10;
 
-            write_int(sen_medm, 6, 5);
+            //write_int(sen_medm, 6, 5);
 
         }
     }
