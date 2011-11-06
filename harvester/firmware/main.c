@@ -32,6 +32,10 @@ config at 0x2007 __CONFIG = _CP_OFF &
 
 #define LED_PIN RB4
 
+#define INTR_PIN RB3
+#define SYNC_PIN RA2
+#define SYNC_TRIS TRISA2
+
 #define nop() \
         _asm\
         nop\
@@ -74,7 +78,7 @@ void setup(void) {
     //Ports
     TRISA=0b00000000;
     PORTA=0b00000000;
-    TRISB=0b00100100;
+    TRISB=0b00101100;
     PORTB=0b00000000;
 
     CMCON=0b00000111; //Turn off comparator on RA port
@@ -101,6 +105,7 @@ void setup(void) {
 void main(void) {
     unsigned char i, j;//, temp;
     char send_state, send_index;
+    char conv_state;
     char Address, Command, Data;
     
     setup();
@@ -130,6 +135,7 @@ void main(void) {
     
     send_state = 0;
     send_index = 0;
+    conv_state = 0;
     Converting = 0;
     
     while (1) {
@@ -159,17 +165,73 @@ void main(void) {
 		}
 
 		if (Converting == 1) {
-            i2c_start();
-            i2c_tx(0b01110010); // Address + write (0)
-            i2c_tx(0x10|0x80);  // DATA1LOW register
-            i2c_start();
-            i2c_tx(0b01110011); // Address + read (1)
-            
-            tx_buffer[2] = i2c_rx(1);
-            tx_buffer[3] = i2c_rx(0);
-            i2c_stop();
-            
-            Converting = 0;
+			switch (conv_state) {
+				case 0: //start conv1
+				    //set ADC_EN
+				    Command = 0x00|0x80; // Control register
+				    Data = 0b00000011; // enable ADC
+				    WriteByte(Address, Command, Data);
+				    
+				    //set timing
+				    Command = 0x01|0x80; // Timing register
+				    Data = 0b00100000; // one-shot at 12ms
+				    WriteByte(Address, Command, Data);
+				    
+				    //set gain
+				    Command = 0x07|0x80; // Gain register
+				    Data = 0b00100000; // 16X, no pre-scaler
+				    WriteByte(Address, Command, Data);
+
+				    //set interrupt control
+				    Command = 0x02|0x80; // Interrupt Control register
+				    Data = 0b00010000; // 16X, no pre-scaler
+				    WriteByte(Address, Command, Data);
+		    
+				    SYNC_TRIS = 1; // let SYNC_PIN go high
+				    
+				    for (i = 0; i <= 100; i++)
+				    	nop();
+				    
+				    SYNC_TRIS = 0;
+				    
+				    conv_state = 1;
+				    break;
+			    case 1: //start conv1 - end
+//				    SYNC_TRIS = 0;
+				    
+				    conv_state = 2;
+				    break;
+			    case 2: //write result to buffer
+			    	//test INTR_PIN
+			    	if (INTR_PIN) {
+			    		break;
+			    	}
+			    	
+			    	//clear INTR (SendByte format)
+				    i2c_start();
+				    i2c_tx(0b01110010); // Address + write (0)
+				    i2c_tx(0b11100000);
+				    i2c_stop();
+				    			    	
+			    	//clear ADC_EN
+				    Command = 0x00|0x80; // Control register
+				    Data = 0b00000001; // disable ADC
+				    WriteByte(Address, Command, Data);
+				    
+			    	//read data to buffer
+		            i2c_start();
+		            i2c_tx(0b01110010); // Address + write (0)
+		            i2c_tx(0x10|0x80);  // DATA1LOW register
+		            i2c_start();
+		            i2c_tx(0b01110011); // Address + read (1)
+		            
+		            tx_buffer[2] = i2c_rx(1);
+		            tx_buffer[3] = i2c_rx(0);
+		            i2c_stop();
+		            
+		            conv_state = 0;
+		            Converting = 0;
+			}
 		}
     }
 }
