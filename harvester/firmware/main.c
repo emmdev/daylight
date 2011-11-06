@@ -189,19 +189,14 @@ void main(void) {
 		    
 				    SYNC_TRIS = 1; // let SYNC_PIN go high
 				    
-				    for (i = 0; i <= 100; i++)
+				    for (i = 0; i <= 100; i++) //delay
 				    	nop();
 				    
 				    SYNC_TRIS = 0;
 				    
 				    conv_state = 1;
 				    break;
-			    case 1: //start conv1 - end
-//				    SYNC_TRIS = 0;
-				    
-				    conv_state = 2;
-				    break;
-			    case 2: //write result to buffer
+			    case 1: //write result to buffer
 			    	//test INTR_PIN
 			    	if (INTR_PIN) {
 			    		break;
