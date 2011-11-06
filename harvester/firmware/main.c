@@ -44,6 +44,7 @@ unsigned char tx_buffer[6];
 unsigned char tx_buffer_copy[6];
 
 
+void WriteByte(char, char, char);
 void write_int(unsigned int, unsigned char, unsigned char);
 
 
@@ -100,29 +101,26 @@ void setup(void) {
 void main(void) {
     unsigned char i, j;//, temp;
     char send_state, send_index;
+    char Address, Command, Data;
     
     setup();
 
     //turn on
-    i2c_start();
-    i2c_tx(0b01110010);
-    i2c_tx(0x00|0b10100000);
-    i2c_tx(0b00000011);
-    i2c_stop();
+    Address = 0x39; // slave address
+    Command = 0x00|0x80; // Control register
+    Data = 0b00000011; // power on, enable ADC
+    WriteByte(Address, Command, Data);
     
     //set timing
-    i2c_start();
-    i2c_tx(0b01110010);
-    i2c_tx(0x01|0b10100000);
-    i2c_tx(0b00000010);
-    i2c_stop();
+    Command = 0x01|0x80; // Timing register
+    Data = 0b00000010; // free-run at 400 ms
+    WriteByte(Address, Command, Data);
+    
     //set gain
-    i2c_start();
-    i2c_tx(0b01110010);
-    i2c_tx(0x07|0b10100000);
-    i2c_tx(0b00100000);
-    i2c_stop();
-            
+    Command = 0x07|0x80; // Gain register
+    Data = 0b00100000; // 16X, no pre-scaler
+    WriteByte(Address, Command, Data);
+
     tx_buffer[0] = 'n';
     tx_buffer[1] = 'y';
     tx_buffer[2] = 123;
@@ -131,9 +129,10 @@ void main(void) {
     tx_buffer[5] = 1022;
     
     send_state = 0;
+    send_index = 0;
+    Converting = 0;
     
     while (1) {
-    	Converting = 0;
 		if (Sending == 1) { // sending in progress
 			switch (send_state) {
 				case 0: //start
@@ -159,9 +158,31 @@ void main(void) {
 			}
 		}
 
+		if (Converting == 1) {
+            i2c_start();
+            i2c_tx(0b01110010); // Address + write (0)
+            i2c_tx(0x10|0x80);  // DATA1LOW register
+            i2c_start();
+            i2c_tx(0b01110011); // Address + read (1)
+            
+            tx_buffer[2] = i2c_rx(1);
+            tx_buffer[3] = i2c_rx(0);
+            i2c_stop();
+            
+            Converting = 0;
+		}
     }
 }
 
+
+void WriteByte(char Address, char Command, char Data)
+{
+    i2c_start();
+    i2c_tx((Address << 1) + 0); // 0 = write
+    i2c_tx(Command);
+    i2c_tx(Data);
+    i2c_stop();
+}
 
 void write_int(unsigned int num, unsigned char col, unsigned char num_digits)
 // writes the ascii representation of an integer to the TX Buffer

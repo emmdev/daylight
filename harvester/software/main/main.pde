@@ -45,6 +45,8 @@ void draw() {
           rcState = 0;
           println("new data:");
           println(Buff);
+          int value = Buff[0] + 256 * Buff[1];
+          println(value);
         }
         break;
     }
