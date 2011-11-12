@@ -6,7 +6,7 @@ import processing.serial.*;
 
 Serial myPort;
 
-int[] Buff = new int[4];
+int[] Buff = new int[7];
 int i, j, rcState;
 
 void setup() {
@@ -40,13 +40,19 @@ void draw() {
       case 2: //receive array
         Buff[j] = inByte;
         j++;
-        if (j >= 4) {
+        if (j >= 7) {
           j = 0;
           rcState = 0;
           println("new data:");
-          println(Buff);
-          int value = Buff[0] + 256 * Buff[1];
-          println(value);
+//          println(Buff);
+          int gain_mode = Buff[0];
+          int red_reg = Buff[1] + 256 * Buff[2];
+          int grn_reg = Buff[3] + 256 * Buff[4];
+          int blu_reg = Buff[5] + 256 * Buff[6];
+          println(gain_mode);
+          println(red_reg);
+          println(grn_reg);
+          println(blu_reg);
         }
         break;
     }

@@ -35,6 +35,7 @@ config at 0x2007 __CONFIG = _CP_OFF &
 #define INTR_PIN RB3
 #define SYNC_PIN RA2
 #define SYNC_TRIS TRISA2
+#define TX_BUFF_SIZE 9
 
 #define nop() \
         _asm\
@@ -44,8 +45,8 @@ config at 0x2007 __CONFIG = _CP_OFF &
 
 unsigned char Converting, Sending;
 
-unsigned char tx_buffer[6];
-unsigned char tx_buffer_copy[6];
+unsigned char tx_buffer[TX_BUFF_SIZE];
+unsigned char tx_buffer_copy[TX_BUFF_SIZE];
 
 
 void WriteByte(char, char, char);
@@ -107,6 +108,9 @@ void main(void) {
     char send_state, send_index;
     char conv_state;
     char Address, Command, Data;
+    char timing_reg, gain_reg, gain_mode;
+    unsigned int red_reg, grn_reg, blu_reg;
+    unsigned int greatest_val;
     
     setup();
 
@@ -128,10 +132,10 @@ void main(void) {
 
     tx_buffer[0] = 'n';
     tx_buffer[1] = 'y';
-    tx_buffer[2] = 123;
+/*    tx_buffer[2] = 123;
     tx_buffer[3] = 64;
     tx_buffer[4] = 231;
-    tx_buffer[5] = 1022;
+    tx_buffer[5] = 1022;*/
     
     send_state = 0;
     send_index = 0;
@@ -143,7 +147,7 @@ void main(void) {
 			switch (send_state) {
 				case 0: //start
 					//copy buffer
-					for (send_index = 0; send_index < 6; send_index++) {
+					for (send_index = 0; send_index < TX_BUFF_SIZE; send_index++) {
 						tx_buffer_copy[send_index] = tx_buffer[send_index];
 					}
 					send_index = 0;
@@ -152,7 +156,7 @@ void main(void) {
 					if (TXIF) { //ready for next byte
 						TXREG = tx_buffer_copy[send_index];
 						send_index++;
-						if (send_index >= 6) { // we are done
+						if (send_index >= TX_BUFF_SIZE) { // we are done
 							send_state = 0;
 							Sending = 0;
 						}
@@ -164,9 +168,13 @@ void main(void) {
 			}
 		}
 
-		if (Converting == 1) {
+		if (Converting == 1) { // conversion in progress
 			switch (conv_state) {
 				case 0: //start conv1
+				    //mode 0 settings:
+            	    timing_reg = 0b00100000; // one-shot at 12ms
+            	    gain_reg = 0b00010000; // 4X, no pre-scaler
+
 				    //set ADC_EN
 				    Command = 0x00|0x80; // Control register
 				    Data = 0b00000011; // enable ADC
@@ -174,12 +182,12 @@ void main(void) {
 				    
 				    //set timing
 				    Command = 0x01|0x80; // Timing register
-				    Data = 0b00100000; // one-shot at 12ms
+				    Data = timing_reg;
 				    WriteByte(Address, Command, Data);
 				    
 				    //set gain
 				    Command = 0x07|0x80; // Gain register
-				    Data = 0b00100000; // 16X, no pre-scaler
+				    Data = gain_reg;
 				    WriteByte(Address, Command, Data);
 
 				    //set interrupt control
@@ -196,7 +204,105 @@ void main(void) {
 				    
 				    conv_state = 1;
 				    break;
-			    case 1: //write result to buffer
+			    case 1: //get results, choose start conv2
+			    	//test INTR_PIN
+			    	if (INTR_PIN) {
+			    		break;
+			    	}
+			    	
+			    	//clear INTR (SendByte format)
+				    i2c_start();
+				    i2c_tx(0b01110010); // Address + write (0)
+				    i2c_tx(0b11100000);
+				    i2c_stop();
+				    			    	
+			    	//clear ADC_EN
+				    Command = 0x00|0x80; // Control register
+				    Data = 0b00000001; // disable ADC
+				    WriteByte(Address, Command, Data);
+				    
+			    	//read data
+		            i2c_start();
+		            i2c_tx(0b01110010); // Address + write (0)
+		            i2c_tx(0x10|0x80);  // DATA1LOW register
+		            i2c_start();
+		            i2c_tx(0b01110011); // Address + read (1)
+		            
+                    grn_reg = i2c_rx(1);
+                    grn_reg += 256 * i2c_rx(1);
+                    red_reg = i2c_rx(1);
+                    red_reg += 256 * i2c_rx(1);
+                    blu_reg = i2c_rx(1);
+                    blu_reg += 256 * i2c_rx(0);
+                    i2c_stop();
+                    
+                    //find greatest value
+                    greatest_val = red_reg;
+                    if (grn_reg > greatest_val)
+                        greatest_val = grn_reg;
+                    if (blu_reg > greatest_val)
+                        greatest_val = blu_reg;
+                    
+                    //calc conv2 gain_mode based on greatest value
+		            gain_mode = 1;
+		            if (greatest_val < 3276)
+                        gain_mode = 2;
+                    if (greatest_val < 395)
+                        gain_mode = 3;
+                    if (greatest_val < 98)
+                        gain_mode = 4;
+		            
+		            //set gain mode
+                    switch (gain_mode) {
+                        case 1:
+                    	    timing_reg = 0b00100000; // one-shot at 12ms
+                    	    gain_reg = 0b00010000; // 4X, no pre-scaler
+                            break;
+                        case 2:
+                    	    timing_reg = 0b00100000; // one-shot at 12ms
+                    	    gain_reg = 0b00110000; // 64X, no pre-scaler
+                            break;
+                        case 3:
+                    	    timing_reg = 0b00100001; // one-shot at 100ms
+                    	    gain_reg = 0b00110000; // 64X, no pre-scaler
+                            break;
+                        case 4:
+                    	    timing_reg = 0b00100010; // one-shot at 400ms
+                    	    gain_reg = 0b00110000; // 64X, no pre-scaler
+                            break;
+                    }
+                    
+                    //start conv2
+				    //set ADC_EN
+				    Command = 0x00|0x80; // Control register
+				    Data = 0b00000011; // enable ADC
+				    WriteByte(Address, Command, Data);
+				    
+				    //set timing
+				    Command = 0x01|0x80; // Timing register
+				    Data = timing_reg;
+				    WriteByte(Address, Command, Data);
+				    
+				    //set gain
+				    Command = 0x07|0x80; // Gain register
+				    Data = gain_reg;
+				    WriteByte(Address, Command, Data);
+
+				    //set interrupt control
+				    Command = 0x02|0x80; // Interrupt Control register
+				    Data = 0b00010000; // 16X, no pre-scaler
+				    WriteByte(Address, Command, Data);
+		    
+				    SYNC_TRIS = 1; // let SYNC_PIN go high
+				    
+				    for (i = 0; i <= 100; i++) //delay
+				    	nop();
+				    
+				    SYNC_TRIS = 0;
+				    
+		            conv_state = 2;
+		            break;
+			    case 2: //write result to buffer
 			    	//test INTR_PIN
 			    	if (INTR_PIN) {
 			    		break;
@@ -220,8 +326,18 @@ void main(void) {
 		            i2c_start();
 		            i2c_tx(0b01110011); // Address + read (1)
 		            
-		            tx_buffer[2] = i2c_rx(1);
-		            tx_buffer[3] = i2c_rx(0);
+		            //gain_mode
+		            // 0 and 1 are for 'n' and 'y' start string
+		            tx_buffer[2] = gain_mode;
+		            //green
+		            tx_buffer[5] = i2c_rx(1);
+		            tx_buffer[6] = i2c_rx(1);
+		            //red
+		            tx_buffer[3] = i2c_rx(1);
+		            tx_buffer[4] = i2c_rx(1);
+		            //blue
+		            tx_buffer[7] = i2c_rx(1);
+		            tx_buffer[8] = i2c_rx(0);
 		            i2c_stop();
 		            
 		            conv_state = 0;
