@@ -30,6 +30,7 @@ config at 0x2007 __CONFIG = _CP_OFF &
 
 
 #define LED_PIN RB4
+#define CH0_PIN RB3
 
 #define nop() \
 _asm\
@@ -41,6 +42,7 @@ _endasm
 unsigned char Lcd_Ready;
 
 unsigned char TX_Buf[16];
+unsigned char ch0_count;
 
 void write_int(unsigned int, unsigned char, unsigned char);
 
@@ -48,17 +50,29 @@ void write_int(unsigned int, unsigned char, unsigned char);
 void intHand(void) __interrupt 0
 {
     static unsigned char led_count;
+    
+    static unsigned char pwm_count, pwm_reg, next_pwm_reg;
 
     if (TMR0IE && TMR0IF) {
-        Lcd_Ready = 1;
+/*        Lcd_Ready = 1;
         if (led_count > 49) {
             LED_PIN = !LED_PIN;
             led_count = 0;
         } else {
             led_count++;
-        }
+        }*/
 
-        TMR0IF=0;
+        pwm_reg = next_pwm_reg;
+        CH0_PIN = test_bit(pwm_reg,0);
+        
+        pwm_count++;
+        
+        next_pwm_reg = 0xff;
+        if (pwm_count > ch0_count)
+        	clear_bit(next_pwm_reg,0);
+
+        TMR0 = 0xff - 30;
+        TMR0IF = 0;
     }
 }
 
@@ -80,7 +94,7 @@ void setup(void) {
     GIE = 1; //Enable interrupts
 
     //Initialize Timer0 - used for LCD refresh rate and long-term timebase
-    OPTION_REG = 4; // 1:32 prescaler, giving XLCD 4.1ms for Cmd cycles
+    OPTION_REG = 0; // 1:32 prescaler, giving XLCD 4.1ms for Cmd cycles
     TMR0IE = 1;
     TMR0 = 0;
     
@@ -101,6 +115,8 @@ void main(void) {
     for (j = 0; j < 16; j++) {
         TX_Buf[j] = ' ';
     }
+    
+    ch0_count = 200;
             
     while (1) {
         if (TXIF) // ready for new word
