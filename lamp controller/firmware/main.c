@@ -30,7 +30,6 @@ config at 0x2007 __CONFIG = _CP_OFF &
 
 
 #define LED_PIN RB4
-#define CH0_PIN RB3
 
 #define nop() \
 _asm\
@@ -42,7 +41,7 @@ _endasm
 unsigned char Lcd_Ready;
 
 unsigned char TX_Buf[16];
-unsigned char ch0_count;
+unsigned char pwm_ch0, pwm_ch1, pwm_ch2, pwm_ch3, pwm_ch4, pwm_ch6, pwm_ch7;
 
 void write_int(unsigned int, unsigned char, unsigned char);
 
@@ -51,7 +50,7 @@ void intHand(void) __interrupt 0
 {
     static unsigned char led_count;
     
-    static unsigned char pwm_count, pwm_reg, next_pwm_reg;
+    static char i;
 
     if (TMR0IE && TMR0IF) {
 /*        Lcd_Ready = 1;
@@ -61,15 +60,6 @@ void intHand(void) __interrupt 0
         } else {
             led_count++;
         }*/
-
-        pwm_reg = next_pwm_reg;
-        CH0_PIN = test_bit(pwm_reg,0);
-        
-        pwm_count++;
-        
-        next_pwm_reg = 0xff;
-        if (pwm_count > ch0_count)
-        	clear_bit(next_pwm_reg,0);
 
         TMR0 = 0xff - 30;
         TMR0IF = 0;
@@ -95,7 +85,7 @@ void setup(void) {
 
     //Initialize Timer0 - used for LCD refresh rate and long-term timebase
     OPTION_REG = 0; // 1:32 prescaler, giving XLCD 4.1ms for Cmd cycles
-    TMR0IE = 1;
+    TMR0IE = 0;
     TMR0 = 0;
     
     //serial port (TRISB{5,2} are set above)
@@ -109,6 +99,8 @@ void setup(void) {
 
 void main(void) {
     unsigned char i, j;//, temp;
+    unsigned char pwm_count, pwm_reg, next_pwm_reg;
+
     setup();
 
     //clear TX Buff
@@ -116,31 +108,41 @@ void main(void) {
         TX_Buf[j] = ' ';
     }
     
-    ch0_count = 200;
+    pwm_ch0 = 100;
+    pwm_ch1 = 100;
+    pwm_ch2 = 100;
+    
             
     while (1) {
-        if (TXIF) // ready for new word
+/*        if (TXIF) // ready for new word
         {
             j++;
             if (j > 15)
                 j = 0;
             TXREG = TX_Buf[j];
-        }
+        }*/
 
-        if (Lcd_Ready) {
-            Lcd_Ready = 0;
-            
-            TX_Buf[0] = 'h';
-            TX_Buf[1] = 'e';
-            TX_Buf[2] = 'l';
-            TX_Buf[3] = 'l';
-            TX_Buf[4] = 'o';
-            TX_Buf[14] = 13;
-            TX_Buf[15] = 10;
+        
+        PORTA = next_pwm_reg;
+        
+        pwm_count++;
+        
+        next_pwm_reg = 0xff;
 
-            write_int(0xffff, 6, 5);
-
-        }
+        if (pwm_count >= pwm_ch0)   //why doesn't > work but >= does??
+        	clear_bit(next_pwm_reg,0);
+        if (pwm_count >= pwm_ch1)
+        	clear_bit(next_pwm_reg,1);
+        if (pwm_count >= pwm_ch2)
+        	clear_bit(next_pwm_reg,2);
+        if (pwm_count >= pwm_ch3)
+        	clear_bit(next_pwm_reg,3);
+        if (pwm_count >= pwm_ch4)
+        	clear_bit(next_pwm_reg,4);
+        if (pwm_count >= pwm_ch6)
+        	clear_bit(next_pwm_reg,6);
+        if (pwm_count >= pwm_ch7)
+        	clear_bit(next_pwm_reg,7);
     }
 }
 
