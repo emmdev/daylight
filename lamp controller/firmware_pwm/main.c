@@ -37,10 +37,6 @@ _asm\
 _endasm
 
 
-//will not be part of lcd library:
-unsigned char Lcd_Ready;
-
-unsigned char TX_Buf[16];
 unsigned char pwm_ch0, pwm_ch1, pwm_ch2, pwm_ch3, pwm_ch4, pwm_ch6, pwm_ch7;
 unsigned char rx_buf[7];
 
@@ -54,15 +50,7 @@ void intHand(void) __interrupt 0
     static char i;
 
     if (TMR0IE && TMR0IF) {
-/*        Lcd_Ready = 1;
-        if (led_count > 49) {
-            LED_PIN = !LED_PIN;
-            led_count = 0;
-        } else {
-            led_count++;
-        }*/
 
-        TMR0 = 0xff - 30;
         TMR0IF = 0;
     }
 }
@@ -73,7 +61,7 @@ void setup(void) {
     //Ports
     TRISA=0b00000000;
     PORTA=0b00000000;
-    TRISB=0b00010010;
+    TRISB=0b00110010;
     PORTB=0b00000000;
 
     CMCON=0b00000111; //Turn off comparator on RA port
@@ -82,8 +70,8 @@ void setup(void) {
     ANSEL=0;//This is needed! PORTA defaults to analog input!
 
     //Enable SPI slave mode
-    SSPSTAT = 0b00000000;
-    SSPCON = 0b00110101;
+    SSPSTAT = 0b00000000; //datasheet is wrong. CKE must = 0
+    SSPCON = 0b00110100;
     SSPIE = 0;
 
     GIE = 1; //Enable interrupts
@@ -91,44 +79,23 @@ void setup(void) {
     //Initialize Timer0 - used for LCD refresh rate and long-term timebase
     OPTION_REG = 0; // 1:32 prescaler, giving XLCD 4.1ms for Cmd cycles
     TMR0IE = 0;
-    TMR0 = 0;
-    
-    //serial port (TRISB{5,2} are set above)
-    // 8 bits, ASYNC, 2400 baud, TX only
-    SPBRG = 51;
-    RCSTA = 0b10000000;
-    TXSTA = 0b00100000;
-    
+    TMR0 = 0; //disable
 }
 
 
 void main(void) {
-    unsigned char i, j;//, temp;
+    unsigned char i;
     unsigned char pwm_count, pwm_reg;
+    unsigned char led_count = 0;
 
     setup();
-
-    //clear TX Buff
-    for (j = 0; j < 16; j++) {
-        TX_Buf[j] = ' ';
-    }
-    
-    pwm_ch2 = 100;    //blue
-    pwm_ch3 = 100;    //green
-    pwm_ch4 = 100;  //red
     
     pwm_count = 0;
     while (1) {
-/*        if (TXIF) // ready for new word
-        {
-            j++;
-            if (j > 15)
-                j = 0;
-            TXREG = TX_Buf[j];
-        }*/
-
         //wait for next batch of data     
-        if (pwm_count == 0) {   
+        if (pwm_count == 0) {
+            SSPOV = 0;
+            SSPIF = 0;
             for (i = 0; i < 7; i++) {
                 while (!SSPIF)
                     nop();
@@ -136,18 +103,22 @@ void main(void) {
                 SSPIF = 0;
                 
                 WCOL = 0;//needed?
-                SSPOV = 0;
+                
+                pwm_ch0 = rx_buf[0];
+                pwm_ch1 = rx_buf[1];
+                pwm_ch2 = rx_buf[2]; //blue
+                pwm_ch3 = rx_buf[3]; //green
+                pwm_ch4 = rx_buf[4]; //red
+                pwm_ch6 = rx_buf[5];
+                pwm_ch7 = rx_buf[6];
             }
-/*            pwm_ch0 = rx_buf[0];
-            pwm_ch1 = rx_buf[1];
-            pwm_ch2 = rx_buf[2];
-            pwm_ch3 = rx_buf[3];
-            pwm_ch4 = rx_buf[4];
-            pwm_ch6 = rx_buf[5];
-            pwm_ch7 = rx_buf[6];*/
-            pwm_ch2 = rx_buf[2];    //blue
-            pwm_ch3 = rx_buf[1];    //green
-            pwm_ch4 = rx_buf[0];  //red
+
+            if (led_count > 49) {
+                LED_PIN = !LED_PIN;
+                led_count = 0;
+            } else {
+                led_count++;
+            }
         }
         
         pwm_reg = 0xff;
@@ -170,49 +141,4 @@ void main(void) {
         	
         pwm_count++;
     }
-}
-
-
-void write_int(unsigned int num, unsigned char col, unsigned char num_digits)
-// writes the ascii representation of an integer to the TX Buffer
-{
-    unsigned int digit, s;
-
-    switch (num_digits) {
-        case 4: goto four_digits;
-        case 3: goto three_digits;
-        case 2: goto two_digits;
-        case 1: goto one_digit;
-    }
-    
-//five_digits:
-    digit = num / 10000;
-    s = digit * 10000;
-    num = num - s;
-    TX_Buf[col] = '0' + digit;
-    col++;
-    
-four_digits:
-    digit = num / 1000;
-    s = digit * 1000;
-    num = num - s;
-    TX_Buf[col] = '0' + digit;
-    col++;
-
-three_digits:
-    digit = num / 100;
-    s = 100 * digit;
-    num = num - s;
-    TX_Buf[col] = '0' + digit;
-    col++;
-
-two_digits:
-    digit = num / 10;
-    s = digit * 10;
-    num = num - s;
-    TX_Buf[col] = '0' + digit;
-    col++;
-
-one_digit:
-    TX_Buf[col] = '0' + num;
 }

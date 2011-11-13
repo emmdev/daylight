@@ -59,7 +59,7 @@ void intHand(void) __interrupt 0
     static char i;
 
     if (TMR0IE && TMR0IF) {
-        TMR0 = 0xff - 200; //13 ms
+        TMR0 = 0xff - 180; //11.6 ms
         Lcd_Ready = 1;
         if (led_count > 49) {
             LED_PIN = !LED_PIN;
@@ -125,9 +125,10 @@ void main(void) {
         TX_Buf[j] = ' ';
     }
     
-    pwm_ch0 = 0;
-    pwm_ch1 = 100;
-    pwm_ch2 = 0;
+    //IT DOESNT LIKE 255?!
+    pwm_ch2 = 254; //blue
+    pwm_ch3 = 0; //green
+    pwm_ch4 = 0; //red
     
             
     while (1) {
