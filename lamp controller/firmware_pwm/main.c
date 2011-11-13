@@ -29,12 +29,7 @@ config at 0x2007 __CONFIG = _CP_OFF &
  _LVP_OFF;
 
 
-#define LED_PIN RB4
-#define TEST_PIN RB6
-
-#define CS_PIN RA1
-#define SCK_PIN RA0
-#define SDI_PIN RA7
+#define LED_PIN RB3
 
 #define nop() \
 _asm\
@@ -47,8 +42,8 @@ unsigned char Lcd_Ready;
 
 unsigned char TX_Buf[16];
 unsigned char pwm_ch0, pwm_ch1, pwm_ch2, pwm_ch3, pwm_ch4, pwm_ch6, pwm_ch7;
+unsigned char rx_buf[7];
 
-void write_spi(unsigned char);
 void write_int(unsigned int, unsigned char, unsigned char);
 
 
@@ -59,27 +54,15 @@ void intHand(void) __interrupt 0
     static char i;
 
     if (TMR0IE && TMR0IF) {
-        TMR0 = 0xff - 200; //13 ms
-        Lcd_Ready = 1;
+/*        Lcd_Ready = 1;
         if (led_count > 49) {
             LED_PIN = !LED_PIN;
             led_count = 0;
         } else {
             led_count++;
-        }
+        }*/
 
-        TEST_PIN = 1;
-
-write_spi(pwm_ch0);
-write_spi(pwm_ch1);
-write_spi(pwm_ch2);
-write_spi(pwm_ch3);
-write_spi(pwm_ch4);
-write_spi(pwm_ch6);
-write_spi(pwm_ch7);
-
-
-        TEST_PIN = 0;
+        TMR0 = 0xff - 30;
         TMR0IF = 0;
     }
 }
@@ -90,7 +73,7 @@ void setup(void) {
     //Ports
     TRISA=0b00000000;
     PORTA=0b00000000;
-    TRISB=0b00100100;
+    TRISB=0b00010010;
     PORTB=0b00000000;
 
     CMCON=0b00000111; //Turn off comparator on RA port
@@ -98,12 +81,16 @@ void setup(void) {
     
     ANSEL=0;//This is needed! PORTA defaults to analog input!
 
+    //Enable SPI slave mode
+    SSPSTAT = 0b00000000;
+    SSPCON = 0b00110101;
+    SSPIE = 0;
 
     GIE = 1; //Enable interrupts
 
     //Initialize Timer0 - used for LCD refresh rate and long-term timebase
-    OPTION_REG = 6; // 1:32 prescaler, giving XLCD 4.1ms for Cmd cycles
-    TMR0IE = 1;
+    OPTION_REG = 0; // 1:32 prescaler, giving XLCD 4.1ms for Cmd cycles
+    TMR0IE = 0;
     TMR0 = 0;
     
     //serial port (TRISB{5,2} are set above)
@@ -117,6 +104,7 @@ void setup(void) {
 
 void main(void) {
     unsigned char i, j;//, temp;
+    unsigned char pwm_count, pwm_reg;
 
     setup();
 
@@ -125,11 +113,11 @@ void main(void) {
         TX_Buf[j] = ' ';
     }
     
-    pwm_ch0 = 0;
-    pwm_ch1 = 100;
-    pwm_ch2 = 0;
+    pwm_ch2 = 100;    //blue
+    pwm_ch3 = 100;    //green
+    pwm_ch4 = 100;  //red
     
-            
+    pwm_count = 0;
     while (1) {
 /*        if (TXIF) // ready for new word
         {
@@ -139,26 +127,51 @@ void main(void) {
             TXREG = TX_Buf[j];
         }*/
 
+        //wait for next batch of data     
+        if (pwm_count == 0) {   
+            for (i = 0; i < 7; i++) {
+                while (!SSPIF)
+                    nop();
+                rx_buf[i] = SSPBUF;
+                SSPIF = 0;
+                
+                WCOL = 0;//needed?
+                SSPOV = 0;
+            }
+/*            pwm_ch0 = rx_buf[0];
+            pwm_ch1 = rx_buf[1];
+            pwm_ch2 = rx_buf[2];
+            pwm_ch3 = rx_buf[3];
+            pwm_ch4 = rx_buf[4];
+            pwm_ch6 = rx_buf[5];
+            pwm_ch7 = rx_buf[6];*/
+            pwm_ch2 = rx_buf[2];    //blue
+            pwm_ch3 = rx_buf[1];    //green
+            pwm_ch4 = rx_buf[0];  //red
+        }
+        
+        pwm_reg = 0xff;
+        if (pwm_count >= pwm_ch0)   //why doesn't > work but >= does??
+        	clear_bit(pwm_reg,0);
+        if (pwm_count >= pwm_ch1)
+        	clear_bit(pwm_reg,1);
+        if (pwm_count >= pwm_ch2)
+        	clear_bit(pwm_reg,2);
+        if (pwm_count >= pwm_ch3)
+        	clear_bit(pwm_reg,3);
+        if (pwm_count >= pwm_ch4)
+        	clear_bit(pwm_reg,4);
+        if (pwm_count >= pwm_ch6)
+        	clear_bit(pwm_reg,6);
+        if (pwm_count >= pwm_ch7)
+        	clear_bit(pwm_reg,7);
+
+        PORTA = pwm_reg;
+        	
+        pwm_count++;
     }
 }
 
-
-void write_spi(unsigned char spi_word)
-{
-    unsigned char x;
-    
-    CS_PIN = 0; //select it
-    for(x = 8; x; x--) {
-        SCK_PIN = 0;
-        if (spi_word & 0x80) //setup data
-            SDI_PIN = 1;
-        else
-            SDI_PIN = 0;
-        SCK_PIN = 1; //clock it in
-        spi_word <<= 1;
-    }
-    CS_PIN = 1;
-}
 
 void write_int(unsigned int num, unsigned char col, unsigned char num_digits)
 // writes the ascii representation of an integer to the TX Buffer
