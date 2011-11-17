@@ -30,7 +30,6 @@ config at 0x2007 __CONFIG = _CP_OFF &
 
 
 #define LED_PIN RB4
-#define TEST_PIN RB6
 
 #define CS_PIN RA1
 #define SCK_PIN RA0
@@ -42,12 +41,11 @@ _asm\
 _endasm
 
 
-//will not be part of lcd library:
-unsigned char Lcd_Ready;
-
 unsigned char TX_Buf[16];
 unsigned char pwm_ch0, pwm_ch1, pwm_ch2, pwm_ch3, pwm_ch4, pwm_ch6, pwm_ch7;
 unsigned char rx_Buf[7];
+unsigned char rcState, inByte; //Why do these need to be global?
+
 
 void write_spi(unsigned char);
 void write_int(unsigned int, unsigned char, unsigned char);
@@ -56,11 +54,11 @@ void write_int(unsigned int, unsigned char, unsigned char);
 void intHand(void) __interrupt 0
 {
     static unsigned char led_count;
-
+    static unsigned char j;
+    
     if (TMR0IE && TMR0IF) {
         TMR0 = 0xff - 180; //11.6 ms
 
-        Lcd_Ready = 1;
         if (led_count > 49) {
             LED_PIN = !LED_PIN;
             led_count = 0;
@@ -77,6 +75,42 @@ void intHand(void) __interrupt 0
         write_spi(pwm_ch7);
 
         TMR0IF = 0;
+    }
+    
+    if (RCIE && RCIF) {
+        inByte = RCREG;
+        
+        if (OERR) {
+            CREN = 0;
+            CREN = 1;
+        }
+        
+        // receive state machine
+        switch (rcState) {
+            case 0: //start from scratch
+                if (inByte == 'n') {
+                    rcState = 1;
+                }
+                break;
+            case 1: //received at least 1 'n'
+                if (inByte == 'y') {
+                    rcState = 2;
+                } else if (inByte != 'n') {
+                    rcState = 0;
+                }
+                break;
+            case 2: //receive array
+                rx_Buf[j] = inByte;
+                j++;
+                if (j >= 7) {
+                    j = 0;
+                    rcState = 0;
+                    pwm_ch2 = rx_Buf[6]; //blue
+                    pwm_ch3 = rx_Buf[4]; //green
+                    pwm_ch4 = rx_Buf[2]; //red
+                }
+                break;
+        }
     }
 }
 
@@ -104,16 +138,16 @@ void setup(void) {
     
     //serial port (TRISB{5,2} are set above)
     // 8 bits, ASYNC, 2400 baud, TX only
+    RCIE = 1;
+    PEIE = 1;
     SPBRG = 51;
     RCSTA = 0b10010000;
     TXSTA = 0b00100000;
-    
 }
 
 
 void main(void) {
     unsigned char i, j;
-    unsigned char rcState, inByte;
 
     setup();
 
@@ -133,41 +167,7 @@ void main(void) {
             TXREG = TX_Buf[j];
         }*/
 
-        if (RCIF) {
-            inByte = RCREG;
-            
-            if (OERR) {
-                CREN = 0;
-                CREN = 1;
-            }
-            
-            // receive state machine
-            switch (rcState) {
-                case 0: //start from scratch
-                    if (inByte == 'n') {
-                        rcState = 1;
-                    }
-                    break;
-                case 1: //received at least 1 'n'
-                    if (inByte == 'y') {
-                        rcState = 2;
-                    } else if (inByte != 'n') {
-                        rcState = 0;
-                    }
-                    break;
-                case 2: //receive array
-                    rx_Buf[j] = inByte;
-                    j++;
-                    if (j >= 7) {
-                        j = 0;
-                        rcState = 0;
-                        pwm_ch2 = rx_Buf[6]; //blue
-                        pwm_ch3 = rx_Buf[4]; //green
-                        pwm_ch4 = rx_Buf[2]; //red
-                    }
-                    break;
-            }
-        }
+
     }
 }
 
