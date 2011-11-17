@@ -17,7 +17,7 @@
 #include "pic/pic16f88.h"
 
 #include "bitop.h"
-
+#include "colours.h"
 
 typedef unsigned int config;
 config at 0x2007 __CONFIG = _CP_OFF &
@@ -45,6 +45,7 @@ unsigned char TX_Buf[16];
 unsigned char pwm_ch0, pwm_ch1, pwm_ch2, pwm_ch3, pwm_ch4, pwm_ch6, pwm_ch7;
 unsigned char rx_Buf[7];
 unsigned char rcState, inByte; //Why do these need to be global?
+char nextColour;
 
 
 void write_spi(unsigned char);
@@ -59,9 +60,11 @@ void intHand(void) __interrupt 0
     if (TMR0IE && TMR0IF) {
         TMR0 = 0xff - 180; //11.6 ms
 
-        if (led_count > 49) {
+        if (led_count > 99) {
             LED_PIN = !LED_PIN;
             led_count = 0;
+            
+            nextColour = 1;
         } else {
             led_count++;
         }
@@ -77,8 +80,8 @@ void intHand(void) __interrupt 0
         TMR0IF = 0;
     }
     
-    if (RCIE && RCIF) {
-        inByte = RCREG;
+    if (0 && RCIF) { //Why is RCIE always TRUE?
+        inByte = RCREG;    
         
         if (OERR) {
             CREN = 0;
@@ -138,8 +141,8 @@ void setup(void) {
     
     //serial port (TRISB{5,2} are set above)
     // 8 bits, ASYNC, 2400 baud, TX only
-    RCIE = 1;
-    PEIE = 1;
+    RCIE = 0;
+    PEIE = 0;
     SPBRG = 51;
     RCSTA = 0b10010000;
     TXSTA = 0b00100000;
@@ -167,7 +170,15 @@ void main(void) {
             TXREG = TX_Buf[j];
         }*/
 
-
+        if (nextColour) {
+            nextColour = 0;
+            pwm_ch4 = colours[i][0];
+            pwm_ch3 = colours[i][1];
+            pwm_ch2 = colours[i][2];
+            i++;
+            if (i >= COLOURS_SIZE)
+                i = 0;
+        }
     }
 }
 

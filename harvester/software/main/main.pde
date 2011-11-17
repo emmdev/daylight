@@ -5,6 +5,7 @@ This reads serial data from the harvester.
 import processing.serial.*;
 
 Serial myPort;
+PrintWriter output;
 
 int[] Buff = new int[7];
 int i, j, rcState;
@@ -16,6 +17,8 @@ void setup() {
   
   rcState = 0;
   j = 0;
+  
+  output = createWriter("measurements.csv");
 }
 
 
@@ -53,9 +56,16 @@ void draw() {
           println(red_reg);
           println(grn_reg);
           println(blu_reg);
+          
+          output.println(gain_mode + ", " + red_reg + ", " + grn_reg + ", " + blu_reg);
         }
         break;
     }
   }  
 }
 
+void keyPressed() {
+  output.flush();
+  output.close();
+  exit();
+}
