@@ -56,11 +56,10 @@ void write_int(unsigned int, unsigned char, unsigned char);
 void intHand(void) __interrupt 0
 {
     static unsigned char led_count;
-    
-    static char i;
 
     if (TMR0IE && TMR0IF) {
         TMR0 = 0xff - 180; //11.6 ms
+
         Lcd_Ready = 1;
         if (led_count > 49) {
             LED_PIN = !LED_PIN;
@@ -69,18 +68,14 @@ void intHand(void) __interrupt 0
             led_count++;
         }
 
-        TEST_PIN = 1;
+        write_spi(pwm_ch0);
+        write_spi(pwm_ch1);
+        write_spi(pwm_ch2);
+        write_spi(pwm_ch3);
+        write_spi(pwm_ch4);
+        write_spi(pwm_ch6);
+        write_spi(pwm_ch7);
 
-write_spi(pwm_ch0);
-write_spi(pwm_ch1);
-write_spi(pwm_ch2);
-write_spi(pwm_ch3);
-write_spi(pwm_ch4);
-write_spi(pwm_ch6);
-write_spi(pwm_ch7);
-
-
-        TEST_PIN = 0;
         TMR0IF = 0;
     }
 }
@@ -117,8 +112,8 @@ void setup(void) {
 
 
 void main(void) {
-    unsigned char i, j;//, temp;
-unsigned char rcState, inByte;
+    unsigned char i, j;
+    unsigned char rcState, inByte;
 
     setup();
 
@@ -127,14 +122,10 @@ unsigned char rcState, inByte;
         TX_Buf[j] = ' ';
     }
     
-    //IT DOESNT LIKE 255?!
-    pwm_ch2 = 0; //blue
-    pwm_ch3 = 10; //green
-    pwm_ch4 = 50; //red
-    
     rcState = 0;
     while (1) {
-/*        if (TXIF) // ready for new word
+/*
+        if (TXIF) // ready for new word
         {
             j++;
             if (j > 15)
@@ -142,47 +133,41 @@ unsigned char rcState, inByte;
             TXREG = TX_Buf[j];
         }*/
 
-if (RCIF) {
-    inByte = RCREG;
-    
-    if (OERR) {
-        CREN = 0;
-        CREN = 1;
-    }
-    
-    // receive state machine
-    switch (rcState) {
-      case 0: //start from scratch
-        if (inByte == 'n') {
-          rcState = 1;
+        if (RCIF) {
+            inByte = RCREG;
+            
+            if (OERR) {
+                CREN = 0;
+                CREN = 1;
+            }
+            
+            // receive state machine
+            switch (rcState) {
+                case 0: //start from scratch
+                    if (inByte == 'n') {
+                        rcState = 1;
+                    }
+                    break;
+                case 1: //received at least 1 'n'
+                    if (inByte == 'y') {
+                        rcState = 2;
+                    } else if (inByte != 'n') {
+                        rcState = 0;
+                    }
+                    break;
+                case 2: //receive array
+                    rx_Buf[j] = inByte;
+                    j++;
+                    if (j >= 7) {
+                        j = 0;
+                        rcState = 0;
+                        pwm_ch2 = rx_Buf[6]; //blue
+                        pwm_ch3 = rx_Buf[4]; //green
+                        pwm_ch4 = rx_Buf[2]; //red
+                    }
+                    break;
+            }
         }
-        break;
-      case 1: //received at least 1 'n'
-        if (inByte == 'y') {
-          rcState = 2;
-        } else if (inByte != 'n') {
-          rcState = 0;
-        }
-        break;
-      case 2: //receive array
-        rx_Buf[j] = inByte;
-        j++;
-        if (j >= 7) {
-          j = 0;
-          rcState = 0;
-/*          //println("new data:");
-          int gain_mode = Buff[0];
-          int red_reg = Buff[1] + 256 * Buff[2];
-          int grn_reg = Buff[3] + 256 * Buff[4];
-          int blu_reg = Buff[5] + 256 * Buff[6];*/
-            pwm_ch2 = rx_Buf[6]; //blue
-            pwm_ch3 = rx_Buf[4]; //green
-            pwm_ch4 = rx_Buf[2]; //red
-        }
-        break;
-    }
-}
-
     }
 }
 
