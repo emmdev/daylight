@@ -17,7 +17,8 @@
 #include "pic/pic16f88.h"
 
 #include "bitop.h"
-#include "colours.h"
+//include "colours.h"
+#include "calc.h"
 
 typedef unsigned int config;
 config at 0x2007 __CONFIG = _CP_OFF &
@@ -40,12 +41,13 @@ _asm\
     nop\
 _endasm
 
-
 unsigned char TX_Buf[16];
 unsigned char pwm_ch0, pwm_ch1, pwm_ch2, pwm_ch3, pwm_ch4, pwm_ch6, pwm_ch7;
 unsigned char rx_Buf[7];
 unsigned char rcState, inByte; //Why do these need to be global?
 char nextColour;
+
+unsigned int red_reg, grn_reg, blu_reg;
 
 
 void write_spi(unsigned char);
@@ -80,7 +82,7 @@ void intHand(void) __interrupt 0
         TMR0IF = 0;
     }
     
-    if (0 && RCIF) { //Why is RCIE always TRUE?
+    if (RCIE && RCIF) { //Why is RCIE always TRUE?
         inByte = RCREG;    
         
         if (OERR) {
@@ -108,9 +110,9 @@ void intHand(void) __interrupt 0
                 if (j >= 7) {
                     j = 0;
                     rcState = 0;
-                    pwm_ch2 = rx_Buf[6]; //blue
-                    pwm_ch3 = rx_Buf[4]; //green
-                    pwm_ch4 = rx_Buf[2]; //red
+                    blu_reg = rx_Buf[5] + 256*rx_Buf[6]; //blue
+                    grn_reg = rx_Buf[3] + 256*rx_Buf[4]; //green
+                    red_reg = rx_Buf[1] + 256*rx_Buf[2]; //red
                 }
                 break;
         }
@@ -141,8 +143,8 @@ void setup(void) {
     
     //serial port (TRISB{5,2} are set above)
     // 8 bits, ASYNC, 2400 baud, TX only
-    RCIE = 0;
-    PEIE = 0;
+    RCIE = 1;
+    PEIE = 1;
     SPBRG = 51;
     RCSTA = 0b10010000;
     TXSTA = 0b00100000;
@@ -151,6 +153,7 @@ void setup(void) {
 
 void main(void) {
     unsigned char i, j;
+//char *retbuf;
 
     setup();
 
@@ -169,7 +172,7 @@ void main(void) {
                 j = 0;
             TXREG = TX_Buf[j];
         }*/
-
+/*
         if (nextColour) {
             nextColour = 0;
             pwm_ch4 = colours[i][0];
@@ -178,7 +181,70 @@ void main(void) {
             i++;
             if (i >= COLOURS_SIZE)
                 i = 0;
-        }
+        }*/
+
+unsigned int Ru, Gu, Bu;
+unsigned int max_val1;
+unsigned int Yu, Zu;
+int Rc, Gc, Bc;
+
+__code int m[3][3] = {
+  {29, -2, 1},
+  {-4, 127, -17},
+  {-1, -26, 56}
+};
+
+Ru = red_reg;
+Gu = grn_reg;
+Bu = blu_reg;
+
+//get R, G, B into 8 bit range
+//find max_val1
+max_val1 = Ru;
+if (Gu > max_val1)
+	max_val1 = Gu;
+if (Bu > max_val1)
+	max_val1 = Bu;
+//shift down as necessary
+while (max_val1 > 0x00ff) {
+	max_val1 >>= 1;
+	Ru >>= 1;
+	Gu >>= 1;
+	Bu >>= 1;
+}
+//shift up as necessary
+while (max_val1 < 0x007f) {
+	max_val1 <<= 1;
+	Ru <<= 1;
+	Gu <<= 1;
+	Bu <<= 1;
+}
+
+Yu = Bu + 3*Gu + Ru;
+	//worst case (R,G,B)/Yu is 1
+
+Zu = 0xffff/Yu;
+
+Ru = (Ru*Zu) >> 6;
+Gu = (Gu*Zu) >> 6;
+Bu = (Bu*Zu) >> 6;
+
+Rc = (Ru*m[0][0] + Gu*m[1][0] + Bu*m[2][0]) >> 7;
+Gc = (Ru*m[0][1] + Gu*m[1][1] + Bu*m[2][1]) >> 7;
+Bc = (Ru*m[0][2] + Gu*m[1][2] + Bu*m[2][2]) >> 7;
+
+//Rc = 53;
+//Gc = 153;
+//Bc = 47;
+
+pwm_ch4 = (unsigned char)Rc;
+pwm_ch3 = (unsigned char)Gc;
+pwm_ch2 = (unsigned char)Bc;
+
+/*
+pwm_ch4 = (unsigned char)(red_reg >> 8);
+pwm_ch3 = (unsigned char)(grn_reg >> 8);
+pwm_ch2 = (unsigned char)(blu_reg >> 8);*/
     }
 }
 
